@@ -259,14 +259,16 @@ The schema for this type is defined by the `identity` rule in the following http
 ----
 identity = {
   "tbs": $tbs-map, ; content to be signed by credential holder
-  "sig_type": tstr .size (1..max-tstr-length), ; a string identifying the data type of the signature field that follows
   "signature": bstr, ; byte string of the signature
   "pad1": bstr, ; byte strings filled with binary `0x00` values used for filling up space
   ? "pad2": bstr, ; optional byte strings filled with binary `0x00` values used for filling up space
 }
 
 tbs-map = {
-  "referenced_assertions": [1* $hashed-uri-map],
+   "sig_type": tstr .size (1..max-tstr-length),  ; a string identifying the signature type
+  "referenced_assertions": [1* $hashed-uri-map], ; the assertions vouched for in the signature
+  ? "claim_certificate_hash": bstr, ; optional hash of the leaf-certificate of the key used to sign the claim 
+  ? "id_certificate_hash" : [1* $hashed-uri-map], ; optional hash of certificate of other ID assertion signers
 }
 ----
 
@@ -274,7 +276,39 @@ IMPORTANT: Future minor version updates (1.1, 1.2, etc.) to this specification M
 
 The `sig_type` field MUST contain a value described in xref:_credentials_signatures_and_validation_methods[xrefstyle=full].
 
-The `hashed-uri-map` rule is defined in link:++https://c2pa.org/specifications/specifications/1.3/specs/C2PA_Specification.html#_hashed_uris++[Section 8.3.1, “Hashed URIs,”] of the C2PA technical specification.
+The `hashed-uri-map` for `referenced_assertions` is defined in link:++https://c2pa.org/specifications/specifications/1.3/specs/C2PA_Specification.html#_hashed_uris++[Section 8.3.1, “Hashed URIs,”] of the C2PA technical specification.
+
+`claim_certificate_hash` (optional) is the hash of the leaf-certificate of the claim signing key.  ID-assertion-generators can set this field 
+to mitigate the threat of the authorized Claim Signature being stripped and replaced.  The hash is calcuated over the leaf certificate expressed in the 
+same representation as used in the signature structure (e.g., DER for X.509).  
+
+`id_certificate_hash` (optional) is an array of leaf-certificates-hashes of other ID assertion signing signing keys in this manifest.  
+ID-assertion-generators can set this field to mitigate the threat of later ID assertions generated later being stripped and replaced.  Note that this field uses the 
+`hashed-uri-map` data structure, but in this case, the URI-hash is the hash of the Claim Signing key's leaf certificate. this field is used, all assertions must be referenced by JUMBF-URI, but not all 
+
+TODO: Need to guard against new assertions being added.  Perhaps referenced_assertions could be either a hash value or NULL.  If NULL, the assertion must be present but thehash is 
+not checked.
+
+
+[NOTE]  
+====
+When ID assertions are employed, a Claim will contain two or more digital signatures from two or more entities with (possibly) 
+different levels of trust.  For some scenarios, stripping a Claim Signature and replacing it with a signature from a different Claim 
+Generator can result in misinterpretation, so this specification contains protections that ID assertion generators can use to guard
+against such attacks.
+
+It will generally not be possible for an attacker to strip and replace an ID assertion without invalidating the Manifest because the ID 
+assertion is hashed and included in the Claim Signature.  Unfortunately, it is not possible to incorporate the hash of the Claim signature in the ID assertion 
+to prevent Claim Signature stripping because the Claim Signature hash is not known at the time the ID assertion is signed.  To enable bidirectional ID-assertion binding, the 
+ID assertion generator _can_ include the hash of the Claim Signature signing key certificate.  If this is present, validators will
+check that the Claim Signature has been issued by the authorized Claim Generator.
+
+Similarly, when a Manifest contains more than one ID assertion, ID assertions that are signed later can include the hash of ID-assertions 
+generated earlier by means of an entry in the `referenced_assertions` array.  This guards against earlier ID assertions being 
+stripped and replaced, but does not protect against later generated ID assertions being replaced without the knowledge or 
+authorization of earlier ID assertion generators.  To guard against the latter attack, each ID assertion can include the hash of the certificate
+for ID assertions that will be generated later. 
+====
 
 ==== Example
 
