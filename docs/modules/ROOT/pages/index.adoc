@@ -268,8 +268,19 @@ tbs-map = {
    "sig_type": tstr .size (1..max-tstr-length),  ; a string identifying the signature type
   "referenced_assertions": [1* $hashed-uri-map], ; the assertions vouched for in the signature
   ? "claim_certificate_hash": bstr, ; optional hash of the leaf-certificate of the key used to sign the claim 
-  ? "id_certificate_hash" : [1* $hashed-uri-map], ; optional hash of certificate of other ID assertion signers
+  ? "id_certificate_hash" : [1* $hashed-cert-uri-map], ; optional hash of certificate of other ID assertion signers
 }
+
+; The data structure used to store a reference to a URL within the same JUMBF and its hash. 
+$hashed-cert-uri-map /= {
+  "url": url-regexp-type, ; JUMBF URI reference
+  ? "alg": tstr .size (1..max-tstr-length), ; A string identifying the cryptographic hash algorithm used to compute all hashes in this claim, taken from the C2PA hash algorithm identifier list. If this field is absent, the hash algorithm is taken from an enclosing structure as defined by that structure. If both are present, the field in this structure is used. If no value is present in any of these places, this structure is invalid; there is no default.
+  ? "hash": bstr, ;  optional.  If present, the byte string representing the hash of the public key used in the referenced ID assertion.
+}
+
+; with CBOR Head (#) and tail ($) are introduced in regexp, so not needed explicitly
+url-regexp-type  /= tstr .regexp "self#jumbf=[\\w\\d][\\w\\d\\.\/:-]+[\\w\\d]"
+
 ----
 
 IMPORTANT: Future minor version updates (1.1, 1.2, etc.) to this specification MAY add new fields to the `tbs-map` description, provided that such new data members are optional and there is a well-specified default meaning that is compatible with the 1.0 version of this specification. Such updates to the specification SHOULD continue to use the `cawg.identity` assertion label.
@@ -277,13 +288,26 @@ IMPORTANT: Future minor version updates (1.1, 1.2, etc.) to this specification M
 The `sig_type` field MUST contain a value described in xref:_credentials_signatures_and_validation_methods[xrefstyle=full].
 
 The `hashed-uri-map` for `referenced_assertions` is defined in link:++https://c2pa.org/specifications/specifications/1.3/specs/C2PA_Specification.html#_hashed_uris++[Section 8.3.1, “Hashed URIs,”] of the C2PA technical specification.
+There must be exactly one entry for each assertion in the claim, including the JUMBF URI of the ID assertion that is currently being created.
+Assertions can be referenced in two ways: if `hashed-uri-map.hash` is present, then the hash value should be set to the assertion-hash in the normal way.  
+If `hashed-uri-map.hash` is not set, then verifiers will 
 
 `claim_certificate_hash` (optional) is the hash of the leaf-certificate of the claim signing key.  ID-assertion-generators can set this field 
-to mitigate the threat of the authorized Claim Signature being stripped and replaced.  The hash is calcuated over the leaf certificate expressed in the 
-same representation as used in the signature structure (e.g., DER for X.509).  
+to mitigate the threat of the authorized Claim Signature being stripped and replaced.  The hash is calcuated over the leaf certificate of the Claim Signing 
+key using the same representation as used in the signature structure (i.e.,, DER for X.509).  
 
-`id_certificate_hash` (optional) is an array of leaf-certificates-hashes of other ID assertion signing signing keys in this manifest.  
-ID-assertion-generators can set this field to mitigate the threat of later ID assertions generated later being stripped and replaced.  Note that this field uses the 
+`id_certificate_hash` (optional) serves two purposes.  An ID-assertion creator can use this field to prevent unauthorized ID assertions being added 
+to the Claim after the ID assertion has been signed.  To do this, `id_certificate_hash` should be set to an array of `hashed-uri-map` structure referencing 
+all of the authorized assertions, but the `hashed-cert-uri-map.hash` fields of all entries should be absent.
+
+This field can also be used to stop unauthorized replacement or creation of ID assertions that are created and signed after the  
+
+is an array of leaf-certificates-hashes of other ID assertion signing signing keys in this manifest.  
+ID-assertion-generators can set this field to mitigate the threat of later ID assertions generated later being stripped and replaced.  This field can also 
+be used to stop additional assertions being added to the claim after the ID signature has been finalized.
+If this field is used, the array must have an entry for every assertion referenced in the associated claim.  In contrast to other 
+
+Note that this field uses the 
 `hashed-uri-map` data structure, but in this case, the URI-hash is the hash of the Claim Signing key's leaf certificate. this field is used, all assertions must be referenced by JUMBF-URI, but not all 
 
 TODO: Need to guard against new assertions being added.  Perhaps referenced_assertions could be either a hash value or NULL.  If NULL, the assertion must be present but thehash is 
